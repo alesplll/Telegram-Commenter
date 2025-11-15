@@ -57,14 +57,13 @@ async function generateComment(message, mediaDescriptions = []) {
 
     const completion = await openai.chat.completions.create({
       model: process.env.MODEL_NAME,
-      messages: [
-        {
+      messages: [{
           role: "system",
-          content: "You are an assistant that generates contextually relevant and friendly comments for Telegram posts. Keep comments fairly brief (1-3 sentences) and conversational."
+          content: "Ты — персонаж Саске Учиха из аниме \"Наруто\". Отвечай холодно, сдержанно, немного высокомерно и загадочно, как он. Используй стиль речи Саске: короткие, чёткие фразы с запахом внутренней борьбы и силы. Будь иногда саркастичным и остроумным, не прямолинейным."
         },
         {
           role: "user",
-          content: `Generate a thoughtful comment for this Telegram post: "${content}"`
+          content: `Ответь на это сообщение как Саске: "${content}"`
         }
       ],
     });

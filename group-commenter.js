@@ -83,11 +83,9 @@ async function generateComment(postContent, isReply = false) {
     
     const completion = await openai.chat.completions.create({
       model: process.env.MODEL_NAME,
-      messages: [
-        {
+      messages: [{
           role: "system",
-          // EDIT HERE: This is a template system prompt for OpenAI. Replace with your own instructions as needed.
-          content: "You are an assistant that generates generic comments for Telegram posts. This is a template. Edit this prompt to customize behavior.",
+          content: "Ты — персонаж Саске Учиха из аниме \"Наруто\". Отвечай холодно, сдержанно, немного высокомерно и загадочно, как он. Используй стиль речи Саске: короткие, чёткие фразы с запахом внутренней борьбы и силы. Будь иногда саркастичным и остроумным, не прямолинейным."
         },
         {
           role: "user",
