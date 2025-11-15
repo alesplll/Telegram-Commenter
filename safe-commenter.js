@@ -189,7 +189,7 @@ async function main() {
 
   // Get the list of channels from the environment variable
   const targetChannels = (process.env.TARGET_CHANNEL || '').split(',').map(ch => ch.trim()).filter(ch => ch);
-  
+    
   if (targetChannels.length === 0) {
     console.error('TARGET_CHANNEL environment variable is empty or not set. Please add channel usernames, separated by commas.');
     process.exit(1);
@@ -204,9 +204,14 @@ async function main() {
       console.log(`Resolving channel: ${channelUsername}`);
       const entity = await client.getEntity(channelUsername);
       
+      const inputChannel = new Api.InputChannel({
+        channelId: entity.id,
+        accessHash: entity.accessHash
+      });
+
       // Use GetFullChannel to reliably get linked chat information
       const fullChannel = await client.invoke(
-        new Api.channels.GetFullChannel({ channel: entity })
+        new Api.channels.GetFullChannel({ channel: inputChannel })
       );
 
       const channelId = String(entity.id);
