@@ -5,3 +5,4 @@ temp/
 node_modules/
 package-lock.json
 .env.tg.app
+telegram_session
