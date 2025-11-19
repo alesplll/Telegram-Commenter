@@ -4,3 +4,4 @@ bot_messages.json
 temp/
 node_modules/
 package-lock.json
+.env.tg.app
