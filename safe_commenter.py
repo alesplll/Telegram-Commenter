@@ -43,7 +43,7 @@ class RateLimiter:
         self.day_history = [t for t in self.day_history if now - t <= timedelta(days=1)]
         
         print("Waiting 30 seconds before replying...")
-        await asyncio.sleep(30)
+        await asyncio.sleep(15)
 
         if len(self.hour_history) >= self.max_per_hour or len(self.day_history) >= self.max_per_day:
             if self.verbose:
@@ -205,7 +205,7 @@ async def main():
             print(f"Generated comment: {comment}")
 
             try:
-                discussion_message = await client(GetDiscussionMessageRequest(message.id))
+                discussion_message = await client(GetDiscussionMessageRequest(msg_id=message.id))
                 discussion_msg_id = discussion_message.messages[0].id
                 await client.send_message(discussion_group_id, comment, reply_to=discussion_msg_id)
                 
