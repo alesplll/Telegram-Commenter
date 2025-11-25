@@ -4,6 +4,7 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument, MessageMediaPoll, MessageMediaWebPage
 from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.messages import GetDiscussionMessageRequest
 from dotenv import load_dotenv
 import aiohttp
 from pathlib import Path
