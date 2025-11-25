@@ -31,6 +31,10 @@ Then, install the necessary dependencies:
 ```sh
 docker build -t telegram_bot .
 docker run -d --name telegram_bot_container telegram_bot
+docker logs -f telegram_bot_container
+docker stop telegram_bot_container
+docker rm telegram_bot_container
+
 
 ```
 

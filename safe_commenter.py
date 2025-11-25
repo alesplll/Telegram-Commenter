@@ -204,7 +204,11 @@ async def main():
             print(f"Generated comment: {comment}")
 
             try:
-                await client.send_message(discussion_group_id, comment, reply_to=message.id)
+                discussion_message = await client(GetDiscussionMessageRequest(message.id))
+                discussion_msg_id = discussion_message.messages[0].id
+                await client.send_message(discussion_group_id, comment, reply_to=discussion_msg_id)
+                
+                # await client.send_message(discussion_group_id, comment, reply_to=message.id)
                 print(f"Comment posted successfully to discussion group {discussion_group_id}.")
             except Exception as e:
                 print(f"Error posting comment: {e}")
