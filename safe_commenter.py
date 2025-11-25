@@ -205,7 +205,7 @@ async def main():
             print(f"Generated comment: {comment}")
 
             try:
-                discussion_message = await client(GetDiscussionMessageRequest(msg_id=message.id))
+                discussion_message = await client(GetDiscussionMessageRequest(msg_id=message.id, peer=client.peer_id))
                 discussion_msg_id = discussion_message.messages[0].id
                 await client.send_message(discussion_group_id, comment, reply_to=discussion_msg_id)
                 
