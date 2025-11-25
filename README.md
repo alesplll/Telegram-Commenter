@@ -17,8 +17,6 @@ Follow these steps to get the bot up and running.
 
 ### 1. Prerequisites
 
-- [Node.js](https://nodejs.org/) (v16 or higher)
-- [npm](https://www.npmjs.com/) (comes with Node.js)
 - A Telegram account with API credentials.
 - An OpenAI API key.
 
@@ -31,7 +29,9 @@ git clone https://github.com/ArnoGevorkyan/Telegram-AI-Commenter
 
 Then, install the necessary dependencies:
 ```sh
-npm install
+docker build -t telegram_bot .
+docker run -d --name telegram_bot_container telegram_bot
+
 ```
 
 ### 3. Configuration

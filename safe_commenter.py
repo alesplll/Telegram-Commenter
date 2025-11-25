@@ -40,6 +40,9 @@ class RateLimiter:
         now = datetime.now()
         self.hour_history = [t for t in self.hour_history if now - t <= timedelta(hours=1)]
         self.day_history = [t for t in self.day_history if now - t <= timedelta(days=1)]
+        
+        print("Waiting 30 seconds before replying...")
+        await asyncio.sleep(30)
 
         if len(self.hour_history) >= self.max_per_hour or len(self.day_history) >= self.max_per_day:
             if self.verbose:
