@@ -180,99 +180,125 @@ async def main():
         
         linked_chat_id = getattr(full_channel.full_chat, 'linked_chat_id', None)
         if linked_chat_id:
-            monitored_channels[channel_id] = linked_chat_id
-            print(f"Channel '{entity.title}' -> discussion {linked_chat_id}")
+            discussion_chat = await client.get_entity(linked_chat_id)
+            monitored_channels[channel_id] = discussion_chat
+            print(f"Channel '{entity.title}' -> discussion {discussion_chat.id}")
+
 
     @client.on(events.NewMessage)
     async def handler(event):
         message = event.message
-        
-        # Игнорируем служебные сообщения
-        if not message.peer_id or message.service:
+
+        # Игнорируем служебные и вообще всё без peer_id
+        if not message.peer_id or not message or not getattr(message.peer_id, 'channel_id', None):
             return
 
-        # 1. НОВЫЙ ПОСТ КАНАЛА (message.post = True)
-        if hasattr(message.peer_id, 'channel_id') and message.post:
+        # ---------- 1. НОВЫЙ ПОСТ В КАНАЛЕ ----------
+        if getattr(message, "post", False) and hasattr(message.peer_id, "channel_id"):
             message_channel_id = str(message.peer_id.channel_id)
             if message_channel_id not in monitored_channels:
                 return
-                
-            discussion_group_id = monitored_channels[message_channel_id]
-            print(f"New channel post {message.id}")
-            
+
+            discussion_entity = monitored_channels[message_channel_id]
+            print(f"New channel post {message.id} in channel {message_channel_id}")
+
             await rate_limiter.handle_comment()
+
             images = []
             if message.media:
                 img_bytes = await download_media(client, message)
                 if img_bytes:
                     images.append(media_to_base64(img_bytes))
-                    print("Downloaded image for vision")
-            
+                    print("Downloaded image for vision (post)")
+
             comment = await generate_comment(message.text or "", images)
             print(f"Generated: {comment[:100]}...")
 
+            # получаем id корневого сообщения в обсуждении
             discussion_message = await client(GetDiscussionMessageRequest(
-                msg_id=message.id, peer=message.peer_id))
+                msg_id=message.id,
+                peer=message.peer_id
+            ))
             discussion_msg_id = discussion_message.messages[0].id
-            
+
             sent_msg = await client.send_message(
-                discussion_group_id, comment, reply_to=discussion_msg_id)
-            
-            # Регистрируем новую ветку: {root_msg_id: reply_count}
+                discussion_entity,  # entity, не id!
+                comment,
+                reply_to=discussion_msg_id
+            )
+
+            # регистрируем ветку (по корневому сообщению обсуждения)
             bot_threads[discussion_msg_id] = 1
-            print(f"Bot reply #1 to post {message.id} -> discussion_msg {discussion_msg_id}")
+            print(f"Bot reply #1 to post {message.id} -> discussion_msg {discussion_msg_id}, bot_msg {sent_msg.id}")
             return
 
-        # 2. СООБЩЕНИЯ В ГРУППЕ ОБСУЖДЕНИЯ (комменты + ответы на бота)
-        peer_id = message.peer_id
-        if isinstance(peer_id, (events.raw.Channel, events.raw.Chat)):
-            chat_id = str(peer_id.id) if hasattr(peer_id, 'id') else str(peer_id.channel_id)
-            
-            # Проверяем, что это группа обсуждения одного из каналов
-            for channel_id, discussion_group_id in monitored_channels.items():
-                if str(discussion_group_id) == chat_id:
-                    print(f"Message in discussion group {chat_id}")
-                    
-                    # Проверяем, является ли это ответом на сообщение бота
-                    if (message.reply_to and 
-                        message.reply_to.reply_to_top_id and 
-                        message.reply_to.reply_to_top_id in bot_threads):
-                        
-                        thread_root_id = message.reply_to.reply_to_top_id
-                        reply_count = bot_threads.get(thread_root_id, 0)
-                        
-                        if reply_count >= MAX_REPLIES_PER_THREAD:
-                            print(f"Thread {thread_root_id} limit reached ({reply_count}/{MAX_REPLIES_PER_THREAD})")
-                            return
-                        
-                        print(f"REPLY to bot thread {thread_root_id} (#{reply_count + 1}/{MAX_REPLIES_PER_THREAD})")
-                        
-                        await rate_limiter.handle_comment()
-                        
-                        # Обрабатываем медиа из ответа пользователя
-                        images = []
-                        if message.media:
-                            img_bytes = await download_media(client, message)
-                            if img_bytes:
-                                images.append(media_to_base64(img_bytes))
-                                print("Downloaded reply image for vision")
-                        
-                        comment = await generate_comment(
-                            message.text or "", 
-                            images, 
-                            reply_context="Это ответ на твое предыдущее сообщение в ветке"
-                        )
-                        
-                        sent_msg = await client.send_message(
-                            chat_id, comment, reply_to=message.id)
-                        
-                        bot_threads[thread_root_id] = reply_count + 1
-                        print(f"Bot reply #{bot_threads[thread_root_id]} in thread {thread_root_id}")
-                        return
-                    
-                    break  # Нашли группу, выходим из цикла
+        # ---------- 2. СООБЩЕНИЯ В ГРУППАХ ОБСУЖДЕНИЯ ----------
+        # chat_id для сопоставления с discussion_entity.id
+        peer = message.peer_id
+        chat_id = getattr(peer, "channel_id", None) or getattr(peer, "chat_id", None)
+        if not chat_id:
+            return
 
-        print(f"Ignored message: peer={message.peer_id}, post={getattr(message, 'post', False)}, reply_to={getattr(message.reply_to, 'reply_to_top_id', None)}")
+        discussion_entity = None
+        for channel_id, disc_entity in monitored_channels.items():
+            if getattr(disc_entity, "id", None) == chat_id:
+                discussion_entity = disc_entity
+                break
+
+        # если это не одна из наших групп обсуждения — выходим
+        if not discussion_entity:
+            return
+
+        # это сообщение в нужной группе обсуждения
+        print(f"Message in discussion group {chat_id}, msg_id={message.id}")
+
+        # ---------- 2.1. Проверяем, это ли ответ в ветке бота ----------
+        if (message.reply_to and
+            getattr(message.reply_to, "reply_to_top_id", None) in bot_threads):
+
+            thread_root_id = message.reply_to.reply_to_top_id
+            reply_count = bot_threads.get(thread_root_id, 0)
+
+            if reply_count >= MAX_REPLIES_PER_THREAD:
+                print(f"Thread {thread_root_id} limit reached "
+                      f"({reply_count}/{MAX_REPLIES_PER_THREAD})")
+                return
+
+            print(f"REPLY to bot thread {thread_root_id} "
+                  f"(#{reply_count + 1}/{MAX_REPLIES_PER_THREAD})")
+
+            await rate_limiter.handle_comment()
+
+            images = []
+            if message.media:
+                img_bytes = await download_media(client, message)
+                if img_bytes:
+                    images.append(media_to_base64(img_bytes))
+                    print("Downloaded reply image for vision")
+
+            comment = await generate_comment(
+                message.text or "",
+                images,
+                reply_context="Это ответ на твое предыдущее сообщение в ветке"
+            )
+
+            sent_msg = await client.send_message(
+                discussion_entity,         # entity группы обсуждений
+                comment,
+                reply_to=message.id        # отвечаем на сообщение пользователя
+            )
+
+            bot_threads[thread_root_id] = reply_count + 1
+            print(f"Bot reply #{bot_threads[thread_root_id]} in thread {thread_root_id}, "
+                  f"bot_msg {sent_msg.id}")
+            return
+
+        # ---------- 2.2. Не ответ на ветку бота ----------
+        print(
+            f"Ignored reply in {chat_id}: "
+            f"reply_to_top={getattr(message.reply_to, 'reply_to_top_id', None) if message.reply_to else None}"
+        )
+
 
     print("Bot running... Ctrl+C to stop")
     await client.run_until_disconnected()
