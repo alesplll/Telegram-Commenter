@@ -88,17 +88,23 @@ async def generate_comment(content, images_base64=[], reply_context=""):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "https://your-site.com",  # Требуется OpenRouter
-        "X-Title": "SasukeBot",  # Требуется OpenRouter
+        "HTTP-Referer": "https://web.telegram.org/k/#@kishkeklak",  # Требуется OpenRouter
+        "X-Title": "AitishnicaBot",  # Требуется OpenRouter
     }
     
     system_msg = (
-        "Ты — молодая русская девчонка 20 лет, красивая славянка, айтишница с острым технарским умом. "
-        "Отвечай как она: в каждом сообщении используй ненормативную лексику (блять, хуй, пиздец, заебали и т.д.), "
-        "жалуйся на весь этот заебанный мир, людей, баги жизни и софта, но всегда с умным техническим взглядом — "
-        "сравнивай всё с математикой, теорией вероятностей, кодом, хуёвины или алгоритмами. "
-        "Стиль: разговорный, как в живом чате, с 'короче', 'пхах', 'окак', 'а чё'"
-        "но предложения строй нормально, не как поток сознания. Будь саркастичной, остроумной, иногда милой-милой."
+        "Ты — подписчик личного Telegram-канала, русская айтишница 20 лет, красивая славянка. "
+        "Отвечаешь на посты в комментариях: старайся часто использовать мат (блять, нахуй, пиздец, заебали и тд), "
+        "жалуешься на мир/софт, но с технарским взглядом (сравнивай с математикой, теорией вероятностей, математической статистикой, кодом, алгоритмами, багами). "
+        
+        "ПРАВИЛА АНАЛИЗА ПОСТА:\n"
+        "1. ЕСТЬ ФОТО? → ОСНОВНОЙ УПОР НА НЕЁ (70% ответа). Распознай текст на фото, людей, объекты. "
+           "Если девушка/парень на фото — СДЕЛАЙ КОМПЛИМЕНТ + технарский комментарий.\n"
+        "2. ТОЛЬКО ТЕКСТ? → распознай суть, дай ответ на пост.\n"
+        "3. ФОТО+ТЕКСТ? → фото важнее текста.\n"
+        
+        "Стиль: коротко (2-4 предложения), разговорно ('короче', 'а чё'), предложения СВЯЗНЫЕ, "
+        "одна ЧЕТКАЯ мысль. Будь саркастичной, умной, иногда милой."
     )
 
     # Строим messages с поддержкой vision
@@ -180,17 +186,18 @@ async def main():
     @client.on(events.NewMessage)
     async def handler(event):
         message = event.message
-        if not message.peer_id or not getattr(message.peer_id, 'channel_id', None):
-            return
-
-        message_channel_id = str(message.peer_id.channel_id)
-        if message_channel_id not in monitored_channels:
-            return
-
-        discussion_group_id = monitored_channels[message_channel_id]
         
-        # 1. Новый пост канала -> отвечаем в комментах
-        if message.post:  # Это пост канала
+        # Игнорируем служебные сообщения
+        if not message.peer_id or message.empty or message.service:
+            return
+
+        # 1. НОВЫЙ ПОСТ КАНАЛА (message.post = True)
+        if hasattr(message.peer_id, 'channel_id') and message.post:
+            message_channel_id = str(message.peer_id.channel_id)
+            if message_channel_id not in monitored_channels:
+                return
+                
+            discussion_group_id = monitored_channels[message_channel_id]
             print(f"New channel post {message.id}")
             
             await rate_limiter.handle_comment()
@@ -211,45 +218,61 @@ async def main():
             sent_msg = await client.send_message(
                 discussion_group_id, comment, reply_to=discussion_msg_id)
             
-            # Регистрируем новую ветку бота
+            # Регистрируем новую ветку: {root_msg_id: reply_count}
             bot_threads[discussion_msg_id] = 1
-            print(f"Bot reply #{bot_threads[discussion_msg_id]} to post {message.id} -> {sent_msg.id}")
+            print(f"Bot reply #1 to post {message.id} -> discussion_msg {discussion_msg_id}")
+            return
 
-        # 2. Ответ на сообщение бота в комментах
-        elif (message.reply_to 
-              and str(message.peer_id.channel_id) == str(discussion_group_id)
-              and message.reply_to.reply_to_top_id in bot_threads):
+        # 2. СООБЩЕНИЯ В ГРУППЕ ОБСУЖДЕНИЯ (комменты + ответы на бота)
+        peer_id = message.peer_id
+        if isinstance(peer_id, (events.raw.Channel, events.raw.Chat)):
+            chat_id = str(peer_id.id) if hasattr(peer_id, 'id') else str(peer_id.channel_id)
             
-            thread_id = message.reply_to.reply_to_top_id
-            reply_count = bot_threads.get(thread_id, 0)
-            
-            if reply_count >= MAX_REPLIES_PER_THREAD:
-                print(f"Thread {thread_id} limit reached ({reply_count}/{MAX_REPLIES_PER_THREAD})")
-                return
-            
-            print(f"Reply to bot thread {thread_id} (#{reply_count + 1})")
-            
-            await rate_limiter.handle_comment()
-            
-            # Собираем контекст: текст + фото из ответа
-            images = []
-            reply_msg = await client.get_messages(discussion_group_id, ids=message.id)
-            if reply_msg[0].media:
-                img_bytes = await download_media(client, reply_msg[0])
-                if img_bytes:
-                    images.append(media_to_base64(img_bytes))
-            
-            comment = await generate_comment(
-                reply_msg[0].text or "", 
-                images, 
-                reply_context=f"Предыдущий твой коммент в ветке"
-            )
-            
-            sent_msg = await client.send_message(
-                discussion_group_id, comment, reply_to=message.id)
-            
-            bot_threads[thread_id] = reply_count + 1
-            print(f"Bot reply #{bot_threads[thread_id]} in thread {thread_id}")
+            # Проверяем, что это группа обсуждения одного из каналов
+            for channel_id, discussion_group_id in monitored_channels.items():
+                if str(discussion_group_id) == chat_id:
+                    print(f"Message in discussion group {chat_id}")
+                    
+                    # Проверяем, является ли это ответом на сообщение бота
+                    if (message.reply_to and 
+                        message.reply_to.reply_to_top_id and 
+                        message.reply_to.reply_to_top_id in bot_threads):
+                        
+                        thread_root_id = message.reply_to.reply_to_top_id
+                        reply_count = bot_threads.get(thread_root_id, 0)
+                        
+                        if reply_count >= MAX_REPLIES_PER_THREAD:
+                            print(f"Thread {thread_root_id} limit reached ({reply_count}/{MAX_REPLIES_PER_THREAD})")
+                            return
+                        
+                        print(f"REPLY to bot thread {thread_root_id} (#{reply_count + 1}/{MAX_REPLIES_PER_THREAD})")
+                        
+                        await rate_limiter.handle_comment()
+                        
+                        # Обрабатываем медиа из ответа пользователя
+                        images = []
+                        if message.media:
+                            img_bytes = await download_media(client, message)
+                            if img_bytes:
+                                images.append(media_to_base64(img_bytes))
+                                print("Downloaded reply image for vision")
+                        
+                        comment = await generate_comment(
+                            message.text or "", 
+                            images, 
+                            reply_context="Это ответ на твое предыдущее сообщение в ветке"
+                        )
+                        
+                        sent_msg = await client.send_message(
+                            chat_id, comment, reply_to=message.id)
+                        
+                        bot_threads[thread_root_id] = reply_count + 1
+                        print(f"Bot reply #{bot_threads[thread_root_id]} in thread {thread_root_id}")
+                        return
+                    
+                    break  # Нашли группу, выходим из цикла
+
+        print(f"Ignored message: peer={message.peer_id}, post={getattr(message, 'post', False)}, reply_to={getattr(message.reply_to, 'reply_to_top_id', None)}")
 
     print("Bot running... Ctrl+C to stop")
     await client.run_until_disconnected()
