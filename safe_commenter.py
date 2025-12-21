@@ -188,7 +188,7 @@ async def main():
         message = event.message
         
         # Игнорируем служебные сообщения
-        if not message.peer_id or message.empty or message.service:
+        if not message.peer_id or message.service:
             return
 
         # 1. НОВЫЙ ПОСТ КАНАЛА (message.post = True)
